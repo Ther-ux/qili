@@ -1,0 +1,10 @@
+{
+  "result": "passed",
+  "archiveCrc": "passed",
+  "sha256FilesVerified": 73,
+  "screensLoaded": 43,
+  "launch": "file://index.html",
+  "pageErrors": [],
+  "noServerRequired": true,
+  "noHostedDemoLinks": true
+}

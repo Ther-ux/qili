@@ -2,7 +2,17 @@
 
 面向中国象棋初学者的短局面训练应用：先自行走棋，再用规则证据、分级提示和讲解理解这一步。
 
-当前是 **v0.3.0 个性化教练版**。不需要注册，不依赖前端框架或运行时 npm 第三方包。Node.js 22.9+ 即可运行；开发测试另需 `npm ci` 安装 jsdom 和 pngjs（仅开发依赖）。项目保持独立本地源码，尚无 GitHub 上传或公开部署计划。
+当前是 **v0.3.0 个性化教练版**。不需要注册，不依赖前端框架或运行时 npm 第三方包。Node.js 22.9+ 即可运行；开发测试另需 `npm ci` 安装 jsdom 和 pngjs（仅开发依赖）。应用支持本地运行；原型设计离线交付包见下方说明。
+
+## 原型设计离线交付
+
+**[下载原型压缩包 qili-prototype.zip](prototype-design/qili-prototype.zip?raw=true)**
+
+完整解压后，进入 `qili-prototype` 文件夹，双击 `index.html` 即可使用；Windows 也可双击 `打开原型.cmd`。无需安装开发环境、启动服务器或配置 API Key。
+
+本交付包含 43 个页面与交互状态，以及用户端、后台管理、移动端和领域 Agent 主要任务流程。使用专用原型工具 Evolus Pencil 制作，原生可编辑工程随压缩包提供。
+
+[使用说明](prototype-design/README.md) · [交互与规则说明](prototype-design/交互与规则说明.md) · [原生工程](prototype-design/qili-prototype.epgz)
 
 ## 个性化教练与结构化棋盘（v0.3.0）
 
