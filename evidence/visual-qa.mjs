@@ -1,0 +1,45 @@
+import { createRequire } from 'node:module';
+import { once } from 'node:events';
+import assert from 'node:assert/strict';
+import { createApp } from '../server.js';
+const require = createRequire(import.meta.url);
+const { chromium } = require('C:/Users/zhang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const server = createApp({ engineReady: () => false });
+server.listen(0, '127.0.0.1'); await once(server, 'listening');
+const browser = await chromium.launch({ executablePath: 'C:/Users/zhang/AppData/Local/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-win64/chrome-headless-shell.exe', headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await page.goto(base); await page.waitForFunction(() => document.querySelector('#puzzle-title').textContent.length > 0);
+  await page.selectOption('#learner-age', '6-8'); await page.selectOption('#learner-goal', 'safety');
+  await page.fill('#learner-reflection', '我想先看看黑车能不能攻击自己的帅。');
+  await page.screenshot({ path: new URL('./desktop-personal-coach.png', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });
+  await page.locator('#chessboard [data-square="a1"]').click();
+  const before = await page.locator('#chessboard [data-square="a1"]').getAttribute('aria-label');
+  await page.click('#flip-button');
+  assert.equal(await page.locator('#chessboard [data-square="a1"]').getAttribute('aria-label'), before);
+  await page.locator('.coordinate-guide summary').click();
+  assert.match(await page.locator('#coordinate-selection').textContent(), /a1/);
+  const downloadPromise = page.waitForEvent('download'); await page.click('#export-board-state');
+  const download = await downloadPromise;
+  const { readFile } = await import('node:fs/promises');
+  const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
+  assert.equal(exported.board.pieces.find(p => p.square === 'a1').symbol, 'R');
+  await page.reload(); await page.waitForFunction(() => document.querySelector('#learner-age').value === '6-8');
+  assert.equal(await page.locator('#learner-reflection').inputValue(), '');
+  assert.equal(await page.locator('#learner-goal').inputValue(), 'safety');
+  await page.setViewportSize({ width: 390, height: 844 }); await page.reload();
+  await page.waitForFunction(() => document.querySelector('#puzzle-title').textContent.length > 0);
+  assert.equal(await page.locator('#learner-panel').evaluate(el => el.open), false);
+  await page.screenshot({ path: new URL('./mobile-personal-coach.png', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.locator('#learner-panel summary').click();
+  for (const id of ['learner-age','learner-level','learner-goal','learner-pace']) assert.equal(await page.locator(`#${id}`).isVisible(),true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  assert.deepEqual(errors, []);
+  console.log('Browser QA passed: desktop/mobile layout, 90-square interaction, fixed coordinates, JSON download, saved profile, refreshed reflection, no page errors or horizontal overflow.');
+} finally {
+  await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+}

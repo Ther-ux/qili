@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+engine/pikafish.nnue
+evidence/*.png
+evidence/*.json
+*.log
+artifacts/
+coverage/
+dist/
+.env.local
+*.tmp

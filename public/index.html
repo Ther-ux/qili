@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="棋理学伴：先独立思考，再用规则证据与分级提示理解象棋。">
+  <title>棋理学伴 · 把每一步想明白</title><link rel="icon" href="/logo.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css?v=20261103-personal-coach">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#training"><img src="/logo.svg" width="44" height="44" alt="棋理标志"><span>棋理学伴<small>QILI · CHESS LEARNING</small></span></a>
+    <p class="nav-label">学习空间</p>
+    <nav aria-label="主导航">
+      <button data-view="training" class="nav-item active"><span>◈</span>战术练习<small>01</small></button>
+      <button data-view="import" class="nav-item"><span>⊞</span>图片残局<small>NEW</small></button>
+      <button data-view="mistakes" class="nav-item"><span>▤</span>我的错题<small id="mistake-badge">0</small></button>
+      <button data-view="knowledge" class="nav-item"><span>▧</span>规则小册<small>07</small></button>
+      <button data-view="evaluation" class="nav-item"><span>⇄</span>定制效果对比<small>LAB</small></button>
+    </nav>
+    <div class="sidebar-note"><span class="tiny-stone">学</span><p>不止知道走哪一步，<br>也理解为什么这样走。</p></div>
+    <button class="settings-link" id="settings-button">⚙ 连接与数据设置</button>
+    <div class="local-note"><span class="dot"></span> 本地学习记录 · 无需注册</div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span>棋理 / <b id="breadcrumb">战术练习</b></span><div class="service-status"><span id="engine-status">引擎检查中</span><span id="model-status">模型检查中</span><button id="api-settings-button" class="api-entry">API 设置</button></div></header>
+    <main>
+      <div id="model-call-status" class="model-call-status" role="status" aria-live="polite" data-state="idle">模型设置加载中…</div>
+      <details id="learner-panel" class="learner-panel" open>
+        <summary><span>我的专属教练</span><small id="learner-summary">先认识你，再一起想棋</small></summary>
+        <p class="small muted">选适合自己的讲法。教练会结合你的实际尝试复盘，每次留一个可以自己完成的小练习。</p>
+        <div class="learner-fields">
+          <label for="learner-age">年龄段<select id="learner-age"><option value="6-8">6–8 岁</option><option value="9-12" selected>9–12 岁</option><option value="13-17">13–17 岁</option><option value="adult">成人</option></select></label>
+          <label for="learner-level">学到哪一步<select id="learner-level"><option value="starter">刚开始学</option><option value="beginner">会走棋，练战术</option><option value="improving">能算几步，想提高</option></select></label>
+          <label for="learner-goal">这次想练<select id="learner-goal"><option value="safety">先保护好帅将</option><option value="tactics" selected>看懂棋子配合</option><option value="explain">能说出走棋理由</option></select></label>
+          <label for="learner-pace">讲解节奏<select id="learner-pace"><option value="gentle">慢一点，一次想一点</option><option value="standard">讲清原因，再看变化</option><option value="challenge">多比较，自己推演</option></select></label>
+        </div>
+        <p id="learner-save-status" class="caption" role="status">设置自动保存在本机。点击 AI 讲解时，年龄段、学习偏好、练习统计和所填想法会随局面发送给 DeepSeek；无需填写姓名或学校。</p>
+      </details>
+      <section id="view-training" class="view">
+        <div class="page-heading"><div><p class="eyebrow">FROM FIRST MOVE TO CHECKMATE</p><h1>从看懂一步，到算清残局。</h1><p class="muted">基础入门与残局专题，先独立落子，再看规则与讲解。</p></div><div class="daily-stat"><strong id="complete-count">0<span> / —</span></strong><small>全题库独立完成</small></div></div>
+        <section class="curriculum-panel" aria-label="练习题库">
+          <div class="curriculum-heading"><div class="course-tabs" role="group" aria-label="练习分类"><button data-course="all" aria-pressed="true">全部</button><button data-course="basic" aria-pressed="false">基础入门</button><button data-course="endgame" aria-pressed="false">残局专题</button></div><label class="theme-control">主题<select id="theme-filter" aria-label="练习主题"><option value="all">全部主题</option></select></label></div>
+          <details id="puzzle-library"><summary id="library-summary">展开题库</summary><div id="puzzle-grid" class="puzzle-grid"></div></details>
+        </section>
+        <div class="lesson-strip"><div><span class="label">当前练习</span><select id="puzzle-select" aria-label="选择练习题"></select></div><div class="progress-track" aria-hidden="true"><div id="progress-fill"></div></div><button class="text-button" id="next-top">下一题 →</button></div>
+        <div class="training-layout">
+          <section class="board-card" aria-label="象棋训练棋盘">
+            <div class="board-toolbar"><span class="turn-badge" id="turn-badge"><i></i>红方先行</span><span id="level-label" class="muted"></span><button id="flip-button" class="icon-button" title="翻转棋盘" aria-label="翻转棋盘">⇅</button></div>
+            <div class="board-wrap"><svg id="chessboard" viewBox="0 0 540 600" role="group" aria-label="象棋棋盘，点击己方棋子再点击目标位置"></svg></div>
+            <div class="board-footer"><span id="board-caption">点击红方棋子，再点击目标位置</span><button id="reset-button" class="text-button">↺ 重试本题</button></div>
+            <details class="coordinate-guide"><summary>认识棋盘坐标 · a0 在红方左下</summary><p>从红方看，横向是 a–i，纵向从底线 0 数到 9。比如 a1 → a7，就是从 a 列第 1 行走到第 7 行。翻转棋盘后，同一个位置的坐标不变。</p><p id="coordinate-selection" class="caption">点一枚棋子，查看它的位置。</p><button id="export-board-state" class="text-button">导出结构化棋盘 JSON</button></details>
+            <section id="variation-panel" class="variation-panel" hidden aria-label="残局对局记录"><div class="variation-heading"><strong>对局步骤</strong><span id="endgame-progress"></span></div><ol id="move-history"></ol></section>
+            <div id="feedback" class="feedback" role="status" aria-live="polite">先读右侧目标，试着独立完成。</div>
+          </section>
+          <aside class="coach-column">
+            <section class="personal-focus"><span class="label">教练陪你想</span><p id="coach-focus" role="status" aria-live="polite">先找出双方的帅和将，再试着走一步。</p></section>
+            <section class="goal-card"><div class="card-eyebrow"><span>本题目标</span><span id="difficulty"></span></div><h2 id="puzzle-title"></h2><p id="objective"></p><div class="tags" id="puzzle-tags"></div></section>
+            <section class="coach-card"><div class="section-title"><h2>一步一步想</h2><span class="source-pill">本地提示</span></div><p class="muted small">卡住时再看提示。第三级会展示示例走法。</p><ol id="hint-list" class="hint-list"></ol><button id="hint-button" class="button secondary wide">给我一点提示 <span id="hint-counter">0 / 3</span></button><div class="coach-divider"></div><label class="reflection-label" for="learner-reflection">告诉教练，你这步想做什么？<span class="caption">可选，最多 240 字。复盘时一起看你的想法。</span></label><textarea id="learner-reflection" class="coach-reflection" rows="2" maxlength="240" placeholder="比如：我想先用车挡住黑将的退路。"></textarea><div class="coach-actions"><button id="lesson-button" class="button secondary">查看本地解法</button><button id="ai-button" class="button primary">AI 复盘讲解</button></div><p id="ai-caption" class="caption">AI 功能检查中</p></section>
+            <section class="insight-card"><span class="insight-icon">理</span><div><h3>先思考，比先看答案更重要</h3><p>用过提示仍然可以完成练习；只有未查看提示或答案时解出，才计为独立完成。</p></div></section>
+          </aside>
+        </div>
+        <section id="report-panel" class="report-panel" hidden><div class="section-title"><h2 id="report-title">本题讲解</h2><span id="report-source" class="source-pill"></span></div><div id="report-content"></div><div id="evidence-list" class="evidence-grid"></div><div class="report-bottom"><button id="engine-button" class="text-button">查看引擎参考分析 →</button><span id="engine-result" class="caption"></span><button id="next-button" class="button primary">继续下一题 →</button></div></section>
+      </section>
+      <section id="view-import" class="view" hidden>
+        <div class="page-heading"><div><p class="eyebrow">FROM A PICTURE TO A VERIFIED LINE</p><h1>把棋谱中的残局，摆到这里。</h1><p class="muted">图片识别 → 核对棋盘 → 搜索解法 → AI 讲解。支持红方或黑方先行。</p></div></div>
+        <section class="plain-card import-upload"><h2>1. 选择棋盘图片</h2><p class="small muted">请选择清晰完整的棋盘，先裁掉姓名、聊天等个人信息。PNG / JPEG / WebP，原图最多 10 MB；浏览器压缩并移除图片元数据后才发送。</p><label id="position-file-button" class="button secondary file-label" role="button" tabindex="0">选择棋盘图片<input id="position-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><button id="position-example" class="text-button">先用示例残局体验</button><p id="position-image-name" class="caption">尚未选择图片；也可在下方手动摆棋或粘贴 FEN。</p>
+          <div class="import-options"><label>原图下方是哪一方？<select id="position-orientation"><option value="red-bottom">红方在下（正常方向）</option><option value="black-bottom">黑方在下（旋转 180°）</option></select></label><label>谁先走？<select id="position-turn"><option value="w">红方先行</option><option value="b">黑方先行</option></select></label></div>
+          <p class="caption">手动对齐四角后在本机裁剪，仅发送棋位裁片给 DS 识别。识别后直接摆棋校正，无需逐格确认。使用 deepseek-flash，选择文件本身不会上传。</p><button id="position-vision-diagnostic" class="text-button" disabled>导出识图诊断（无图片、无 Key）</button><p id="position-status" class="import-status" role="status" aria-live="polite">请先选择图片，或载入示例体验。</p>
+        </section>
+        <div class="import-layout"><section class="plain-card import-original"><h2>2. 手动选四角裁剪</h2><img id="position-image-preview" alt="待核对的象棋棋盘原图" hidden><details id="position-grid-panel" open><summary>在原图上点选四角</summary><div id="position-image-empty" class="empty-small">先在上方选择棋盘图片。图片会在这里显示，按左上 → 右上 → 右下 → 左下点选四角；边框和网格实时跟随。</div><div id="position-grid-editor" hidden><p class="caption">绿线应穿过 9 列 × 10 行交叉点。四角按左上、右上、右下、左下，放在最外侧交叉点上。可拖动角点或输入坐标微调。对齐的是棋盘线交叉点，不是外边框；河界不多算一行。</p><canvas id="position-grid-canvas" role="img" aria-label="棋盘定位预览；可点击调整选中的角点，也可使用下方坐标输入"></canvas><div class="grid-controls"><label>角点<select id="position-grid-corner"><option value="0">1 左上</option><option value="1">2 右上</option><option value="2">3 右下</option><option value="3">4 左下</option></select></label><label>横向 %<input id="position-grid-x" type="number" min="0" max="100" step="0.1"></label><label>纵向 %<input id="position-grid-y" type="number" min="0" max="100" step="0.1"></label></div><p id="position-grid-hint" class="small" role="status">点选最外侧交叉点，绿色边框和网格会实时更新。</p><label class="import-check"><input id="position-image-consent" type="checkbox">允许将这张棋盘图发送至 DeepSeek 官方接口进行识别，可能产生 API 费用。</label><button id="position-recognize" class="button primary" disabled>裁剪识别＋字形复核（最多 3 次调用）</button></div></details></section>
+          <section class="board-card"><div class="board-toolbar"><strong>3. 核对与校正</strong><span id="position-board-turn" class="muted">红方先行</span></div><div class="board-wrap"><svg id="position-board" viewBox="0 0 540 600" role="group" aria-label="导入残局校正棋盘"></svg></div><p class="import-edit-note caption">下方始终是红方底线。选择棋子，再点交叉点放置；选择擦除可清空一格。</p><div id="position-palette" class="position-palette" role="group" aria-label="校正棋子选择"></div><div class="import-board-actions"><button id="position-rotate" class="text-button">旋转识别结果 180°</button><button id="position-clear" class="text-button">清空摆棋</button><button id="position-origin" class="text-button">返回原局面</button></div></section>
+        </div>
+        <section class="plain-card import-controls"><details><summary>FEN 文本导入 / 复制当前局面</summary><label class="field-label" for="position-fen">当前局面 FEN</label><textarea id="position-fen" rows="3" maxlength="220" spellcheck="false"></textarea><button id="position-load-fen" class="button secondary">导入 FEN</button></details><label class="import-check"><input id="position-confirm" type="checkbox">我已对照原图，核对棋子位置、颜色、方向和行棋方。</label><div class="import-options"><button id="position-solve" aria-describedby="position-action-status" class="button primary" disabled>分析当前局面（本地，无需 Key）</button><button id="position-explain" class="button secondary" disabled>DS 逐步讲解（1 次调用）</button><button id="position-export" class="button secondary" disabled>导出分析</button></div><p id="position-action-status" class="import-status" role="status" aria-live="polite">核对棋盘后点击“分析当前局面”。进度、失败原因和结果会显示在这里。</p><details class="short-mate-options"><summary>高级：短杀验证范围</summary><label>最多轮到行棋方走几次？<select id="position-depth"><option value="1">1 次（每次都将军）</option><option value="2">2 次（每次都将军）</option><option value="3" selected>3 次（每次都将军）</option></select></label><p class="caption">例如红先 3 次：红走、黑应、红走、黑应、红走。这是额外的连续将军短杀检查，不限制引擎参考线路或 DS 讲解步数。未找到短杀不等于和棋；引擎参考不等于完整必胜证明。</p></details><p class="caption">先分析当前局面，查看本地核验和引擎参考；再点击“DS 逐步讲解”，生成走棋原因、对手应对和局面结果。DS 按钮灰色时，先在 API 设置应用 Key。</p></section>
+        <section id="position-report" class="plain-card" role="region" aria-labelledby="position-conclusion" tabindex="-1" hidden><p id="position-proof-label" class="eyebrow"></p><h2 id="position-conclusion"></h2><p id="position-engine-detail" class="small muted"></p><label class="field-label" for="position-playback">4. 逐步查看参考线路</label><select id="position-playback" aria-label="残局解法步骤"></select><ol id="position-line" class="position-line"></ol><div id="position-evidence"></div><button id="position-study" class="button secondary" disabled>从当前参考局面开始摆谱</button><section id="position-ai-report" class="position-ai-report" hidden><h3>5. AI 解法讲解</h3><div id="position-ai-content"></div></section><div id="position-walkthrough" hidden></div></section>
+        <p id="position-draft-status" class="caption">残局草稿会暂存在本标签页，刷新后恢复；API Key 不保存。长期保留请导出分析。</p><p class="caption">刷新或关闭页面会取消未完成的 DS 请求，不会自动重新调用。图片自动识别不保证准确，求解仅针对你确认后的棋盘。</p>
+      </section>
+      <section id="view-mistakes" class="view" hidden><div class="page-heading"><div><p class="eyebrow">TRY AGAIN, UNDERSTAND MORE</p><h1>把错过的，再想一遍。</h1><p class="muted">只保存在当前浏览器；可在设置中导出备份。</p></div></div><div id="mistake-list" class="item-grid"></div></section>
+      <section id="view-knowledge" class="view" hidden><div class="page-heading"><div><p class="eyebrow">A SMALL RULEBOOK</p><h1>规则清楚，落子从容。</h1><p class="muted">基础走子与短局面知识，不包含长将、长捉等比赛裁定。</p></div></div><div id="knowledge-list" class="item-grid"></div></section>
+      <section id="view-evaluation" class="view" hidden><div class="page-heading"><div><p class="eyebrow">EVIDENCE BEFORE CLAIMS</p><h1>定制有没有帮助，放在一起看。</h1><p class="muted">同一模型、同一局面、同一规则与引擎证据，比较教学定制的增量。</p></div></div><div class="evaluation-controls"><label>代表性案例<select id="eval-select"></select></label><button id="compare-button" class="button primary">运行对照（2 次模型调用）</button><button id="export-eval-button" class="button secondary" disabled>导出本次结果</button></div><p id="eval-status" role="status" class="muted">尚未运行评测。没有模型配置时不生成模拟结果。</p><div class="compare-grid"><section class="plain-card"><h2>基础提示</h2><p class="caption">通用角色 + 相同任务及工具证据</p><div id="baseline-result" class="empty-small">等待实际调用</div></section><section class="plain-card"><h2>领域定制</h2><p class="caption">增加相关规则知识、教学案例与分步讲解要求</p><div id="customized-result" class="empty-small">等待实际调用</div></section></div><section class="plain-card rubric"><h2>人工检查维度</h2><p>规则与战术事实是否正确 · 是否解释实际着法 · 引用能否支持结论 · 初学者能否理解和复现</p><p class="caption">结构与坐标校验不能证明自然语言解释完全正确；教学效果还需真实用户检查。</p></section></section>
+      <footer>棋理学伴 <span>·</span> 先落子，后求解 <span>·</span> v0.3.0 个性化教练版 <a href="https://github.com/WildWriter/ChineseChess-with-deepseek" target="_blank" rel="noreferrer">规则来源与开源致谢 ↗</a></footer>
+    </main>
+  </div>
+  <dialog id="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="关闭设置">×</button></form><h2>连接与数据设置</h2><p class="muted small" id="settings-status"></p><label class="field-label">项目访问口令<input id="access-token" type="password" autocomplete="off" placeholder="本机未设置时无需填写"></label><button id="save-token" class="button primary">应用口令（仅本次会话）</button><hr><h3>我的学习记录</h3><p class="caption">记录只保存在本机浏览器，不自动同步到服务器。</p><div class="coach-actions"><button id="export-button" class="button secondary">导出记录</button><label class="button secondary file-label">导入记录<input id="import-file" type="file" accept="application/json,.json" hidden></label></div><p id="data-status" role="status" class="caption"></p><hr><h3>模型配置</h3><p class="small muted">请在页面输入自己的 API Key、选择模型并测试连接。密钥仅在当前页面有效，刷新或重新打开页面后需要重新输入。</p><button id="open-api-from-settings" class="button secondary">打开 API 设置</button></dialog>
+  <dialog id="api-dialog" aria-labelledby="api-dialog-title">
+    <form method="dialog"><button class="dialog-close" aria-label="关闭 API 设置">×</button></form>
+    <p class="eyebrow">MODEL CONNECTION</p><h2 id="api-dialog-title">API Key 与模型设置</h2>
+    <p id="api-active-summary" class="small muted"></p>
+    <label class="field-label" for="api-key-input">API Key</label>
+    <input id="api-key-input" class="api-field" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="api-security-note" placeholder="在此粘贴 DeepSeek API Key">
+    <label class="field-label" for="model-select">模型</label>
+    <select id="model-select" class="api-field"><option value="deepseek-flash" selected>deepseek-flash（默认）</option><option value="deepseek-v4-pro">deepseek-v4-pro</option></select>
+    <p id="api-security-note" class="caption">每次打开或刷新页面后，请重新输入 API Key。密钥仅保留在当前页面内存，经后端发送至 https://api.deepseek.com，不写入浏览器存储或文件。</p>
+    <div class="api-actions"><button id="apply-api-button" class="button secondary">应用设置</button><button id="test-api-button" class="button primary">应用并测试连接</button><button id="clear-api-button" class="text-button">清除页面密钥并停用</button></div>
+    <div id="api-test-status" class="api-test-status" role="status" aria-live="polite" data-state="idle">尚未测试。测试会向所选模型发送一次短请求，可能产生 API 费用。</div>
+    <a href="https://api-docs.deepseek.com/" target="_blank" rel="noreferrer">DeepSeek 官方接口说明 ↗</a>
+  </dialog>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="/app.js?v=20261103-personal-coach"></script>
+</body></html>

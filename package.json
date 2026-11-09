@@ -1,0 +1,15 @@
+{
+  "name": "qili-study",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "棋理学伴：象棋战术练习、证据讲解与错题重练",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test tests/*.test.js",
+    "verify": "node scripts/verify-curriculum.js"
+  },
+  "devDependencies": { "jsdom": "26.1.0", "pngjs": "7.0.0" },
+  "engines": { "node": ">=22.9" },
+  "license": "MIT"
+}
