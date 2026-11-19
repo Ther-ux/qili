@@ -34,6 +34,43 @@ async function page(t, provider) {
 }
 const response=answer=>({ok:true,json:async()=>({choices:[{finish_reason:'stop',message:{content:JSON.stringify(answer)}}]})});
 
+test('training keeps chess squares and keyboard focus through selection, rotation and move verification', async t => {
+  const { $, dom, until } = await page(t, async () => assert.fail('Training should only use local rules'));
+  const board = $('chessboard');
+  const square = name => board.querySelector(`[data-square="${name}"]`);
+  const press = key => dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key }));
+  const rook = square('a1'), target = square('a7');
+  const rookStart = rook.getAttribute('transform');
+  rook.focus();
+  press('Enter');
+  assert.equal(square('a1'), rook);
+  assert.equal(dom.window.document.activeElement, rook);
+  assert.equal(rook.getAttribute('aria-pressed'), 'true');
+  assert.match(target.getAttribute('aria-label'), /a7，合法落点/);
+
+  $('flip-button').onclick();
+  assert.notEqual(rook.getAttribute('transform'), rookStart);
+  press('ArrowLeft');
+  assert.equal(dom.window.document.activeElement, square('b1'));
+  press('ArrowRight');
+  assert.equal(dom.window.document.activeElement, rook);
+  press('Escape');
+  assert.equal(rook.getAttribute('aria-pressed'), 'false');
+  assert.doesNotMatch(target.getAttribute('aria-label'), /合法落点/);
+
+  press(' ');
+  for (let step = 0; step < 6; step++) press('ArrowDown');
+  assert.equal(dom.window.document.activeElement, target);
+  press('Enter');
+  assert.match($('feedback').textContent, /正在核验/);
+  assert.equal(board.getAttribute('aria-disabled'), 'true');
+  await until(() => $('feedback').textContent.includes('独立完成'));
+  assert.equal(square('a7'), target);
+  assert.equal(dom.window.document.activeElement, target);
+  assert.equal(target.getAttribute('aria-label'), '红车 a7');
+  assert.deepEqual(Array.from(board.querySelectorAll('[tabindex="0"]')), [target]);
+});
+
 test('personal coaching settings, real attempts and learner thoughts reach AI without changing flipped coordinates', async t => {
   let context;
   const { $, dom, apply, move, until } = await page(t, async (url, options) => {

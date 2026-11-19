@@ -1,12 +1,14 @@
-import { parseFen, generateLegalMoves, moveToUci, uciToMove, pieceSide, pieceName, gameStatus } from './vendor/xiangqi.js';
+import { parseFen, generateLegalMoves, moveToUci, pieceSide, pieceName, gameStatus } from './vendor/xiangqi.js';
 import { createModelSession, pageKeyAllowed } from './model-session.js';
 import { filterCurriculum, recordAttempt } from './curriculum.js';
 import { createLearningStore, sanitizeLearningRecords } from './learning-store.js';
 import { mountImportLab } from './import-lab.js';
 import { mountWalkthrough } from './walkthrough-view.js';
 import { loadLearnerProfile, saveLearnerProfile, AGE_LABELS, LEVEL_LABELS, GOAL_LABELS } from './learner-profile.js';
-import { COORDINATE_SYSTEM, serializeBoard, squareCoordinates } from './board-state.js';
+import { COORDINATE_SYSTEM, serializeBoard } from './board-state.js';
+import { mountTrainingBoard } from './training-board.js';
 
+let trainingBoard;
 let trainingWalkthroughView = null;
 let pageRequests = new AbortController();
 window.addEventListener('pagehide', () => pageRequests.abort());
@@ -14,7 +16,6 @@ window.addEventListener('pageshow', () => { if (pageRequests.signal.aborted) pag
 
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = 'qili-study-v1';
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const state = { puzzles: [], knowledge: [], health: {}, current: null, board: null, selected: null, legal: [], flipped: false, hints: 0, assisted: false, solved: false, pending: false, generation: 0, lastMove: null, hintMove: null, token: '', records: {}, comparison: null, modelSession: null, modelBusy: false, history: [], course: 'all', theme: 'all' };
 let toastTimer, learningStore = null, recordChannel = null, recordsReadVersion = 0, importLab = null;
 let learnerProfile, practiceLog = [];
@@ -32,7 +33,7 @@ function updateCoachFocus(report) {
 }
 function initLearnerPanel() {
   learnerProfile = loadLearnerProfile();
-  if (window.matchMedia?.('(max-width: 680px)').matches) $('learner-panel').open = false;
+  $('learner-settings-button').onclick = () => $('learner-panel').showModal();
   const fields = { ageBand: 'learner-age', level: 'learner-level', goal: 'learner-goal', pace: 'learner-pace' };
   const summary = () => { $('learner-summary').textContent = `${AGE_LABELS[learnerProfile.ageBand]} · ${LEVEL_LABELS[learnerProfile.level]} · ${GOAL_LABELS[learnerProfile.goal]}`; };
   for (const [key, id] of Object.entries(fields)) {
@@ -48,7 +49,6 @@ function initLearnerPanel() {
 }
 
 function el(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
-function svg(tag, attrs = {}) { const node = document.createElementNS(SVG_NS, tag); for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value); return node; }
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 4500); }
 function feedback(message, type = '') { $('feedback').textContent = message; $('feedback').className = `feedback ${type}`; }
 function sanitizeRecords(raw) {
@@ -99,9 +99,12 @@ async function saveAttempt(id, report, assisted) {
 function updateStats() {
   const values = Object.values(state.records);
   const independent = values.filter(item => item.independent).length;
+  const mistakes = values.filter(item => item.mistakes > 0 && !item.resolved).length;
   $('complete-count').replaceChildren(document.createTextNode(String(independent)), el('span', ` / ${state.puzzles.length}`));
-  $('progress-fill').style.width = `${state.puzzles.length ? independent / state.puzzles.length * 100 : 0}%`;
-  $('mistake-badge').textContent = String(values.filter(item => item.mistakes > 0 && !item.resolved).length);
+  $('progress-fill').max = state.puzzles.length || 1;
+  $('progress-fill').value = independent;
+  $('mistake-badge').textContent = String(mistakes);
+  $('mistake-badge').hidden = mistakes === 0;
   if(state.current)renderPuzzleLibrary();
 }
 async function api(path, data) {
@@ -179,22 +182,37 @@ async function testApiConnection() {
   catch (error) { setModelStatus('error', `连接失败：${error.message}`); }
   finally { setModelBusy(false); }
 }
-function view(name) {
+function view(name, moveFocus = true) {
   for (const node of document.querySelectorAll('.view')) node.hidden = node.id !== `view-${name}`;
-  for (const node of document.querySelectorAll('[data-view]')) node.classList.toggle('active', node.dataset.view === name);
-  $('breadcrumb').textContent = { training: '战术练习', import: '图片残局', mistakes: '我的错题', knowledge: '规则小册', evaluation: '定制效果对比' }[name];
+  for (const node of document.querySelectorAll('[data-view]')) {
+    const active = node.dataset.view === name;
+    node.classList.toggle('active', active);
+    if (active) node.setAttribute('aria-current', 'page');
+    else node.removeAttribute('aria-current');
+  }
+  const heading = $(`view-${name}`).querySelector('h1');
+  $('breadcrumb').textContent = heading.textContent;
   if (name === 'mistakes') renderMistakes();
   history.replaceState(null, '', `#${name}`);
+  if (moveFocus) {
+    heading.focus({ preventScroll: true });
+    document.documentElement.scrollTop = 0;
+  }
 }
 function visiblePuzzles(){return filterCurriculum(state.puzzles,state.course,state.theme);}
 function renderPuzzleLibrary(){
   const puzzles=visiblePuzzles();
-  $('library-summary').textContent=`展开题库 · 当前 ${puzzles.length} 题 · ${puzzles.filter(p=>state.records[p.id]?.completed).length} 题已完成`;
+  $('library-summary').textContent=`筛选与题库 · ${puzzles.length} 题 · 已完成 ${puzzles.filter(p=>state.records[p.id]?.completed).length} 题`;
   $('puzzle-grid').replaceChildren(...puzzles.map(puzzle=>{
     const button=el('button',undefined,'puzzle-card');button.type='button';button.dataset.puzzleId=puzzle.id;button.disabled=state.pending||state.modelBusy;
     button.setAttribute('aria-pressed',String(state.current?.id===puzzle.id));
     button.append(el('span',`${puzzle.course==='basic'?'基础':'残局'} · ${puzzle.maxRedMoves?`红方 ${puzzle.maxRedMoves} 步内`:'一步目标'}`,'caption'),el('strong',puzzle.title),el('small',`${puzzle.theme} · ${state.records[puzzle.id]?.completed?'✓ 已完成':'待练习'}`));
-    button.onclick=()=>selectPuzzle(puzzle.id);return button;
+    button.onclick = () => {
+      selectPuzzle(puzzle.id);
+      $('puzzle-library').open = false;
+      $('puzzle-select').focus();
+    };
+    return button;
   }));
 }
 function renderCurriculum(){
@@ -219,80 +237,43 @@ function renderVariation(line=[]){
 function selectPuzzle(id) {
   trainingWalkthroughView?.dispose(); trainingWalkthroughView = null;
   const puzzle = state.puzzles.find(item => item.id === id) || state.puzzles[0];
-  state.current = puzzle; state.board = parseFen(puzzle.fen).board;
+  const { board, turn } = parseFen(puzzle.fen);
+  state.current = puzzle; state.board = board;
   state.positionFen = puzzle.fen; $('learner-reflection').value = '';
   state.selected = null; state.hints = 0; state.assisted = false; state.solved = false; state.pending = false; state.lastMove = null; state.hintMove = null; state.history=[]; state.generation++;
   if(!visiblePuzzles().some(item=>item.id===puzzle.id)){state.course=puzzle.course;state.theme='all';}
   renderCurriculum();renderVariation();
-  state.legal = generateLegalMoves(state.board, parseFen(puzzle.fen).turn);
+  state.legal = generateLegalMoves(board, turn);
   $('puzzle-select').value = puzzle.id; $('puzzle-title').textContent = puzzle.title; $('objective').textContent = puzzle.objective;
   $('level-label').textContent = puzzle.subtitle; $('difficulty').textContent = ['','入门 · Ⅰ','基础 · Ⅱ','进阶 · Ⅲ'][puzzle.difficulty];
   $('puzzle-tags').replaceChildren(el('span', puzzle.category), el('span', puzzle.theme), el('span', puzzle.maxRedMoves?`红方 ${puzzle.maxRedMoves} 步内`:'一步目标'));
   $('hint-list').replaceChildren(); $('hint-counter').textContent = '0 / 3'; $('hint-button').disabled = false;
-  $('report-panel').hidden = true; $('engine-result').textContent = ''; $('turn-badge').textContent = '● 红方先行';
+  $('report-panel').hidden = true; $('engine-result').textContent = ''; $('turn-badge').textContent = '红方先行';
+  $('turn-badge').classList.remove('complete');
   $('report-content').replaceChildren(); $('evidence-list').replaceChildren(); resetTrainingAiCaption();
   $('board-caption').textContent = '点击红方棋子，再点击目标位置';
-  feedback(puzzle.maxRedMoves?'先读目标。你执红，黑方自动应将；完成最后的绝杀才计为通关。':'先读右侧目标，试着独立完成。'); setPending(false); renderBoard();
+  feedback(puzzle.maxRedMoves?'先读目标。你执红，黑方自动应将；完成最后的绝杀才计为通关。':'先读本题目标，试着独立完成。'); setPending(false); renderBoard();
   updateCoachFocus();
 }
 function renderBoard() {
-  const root = $('chessboard');
-  const focusedSquare = root.contains(document.activeElement) ? document.activeElement.getAttribute('data-square') : null;
-  root.replaceChildren();
-  const defs = svg('defs');
-  const gradient = svg('radialGradient', { id: 'stone', cx: '.38', cy: '.28', r: '.8' });
-  gradient.append(svg('stop', { offset: '0', 'stop-color': '#fffdf4' }), svg('stop', { offset: '1', 'stop-color': '#efe1c2' }));
-  defs.append(gradient); root.append(defs);
-  const step = 52, x0 = 62, y0 = 65;
-  const display = (row, col) => state.flipped ? [9 - row, 8 - col] : [row, col];
-  const coords = (row, col) => { const [r, c] = display(row, col); return [x0 + c * step, y0 + r * step]; };
-  const line = (x1,y1,x2,y2, width = 1) => root.append(svg('line', { x1, y1, x2, y2, stroke: '#aa9370', 'stroke-width': width, 'pointer-events': 'none' }));
-  root.append(svg('rect', { x: 44, y: 47, width: 452, height: 504, rx: 3, fill: 'none', stroke: '#b9a17a', 'stroke-width': 1.4, 'pointer-events': 'none' }));
-  for (let r=0;r<10;r++) line(x0,y0+r*step,x0+8*step,y0+r*step,r===0||r===9?1.5:1);
-  for (let c=0;c<9;c++) {
-    if(c===0||c===8) line(x0+c*step,y0,x0+c*step,y0+9*step,1.5);
-    else {line(x0+c*step,y0,x0+c*step,y0+4*step);line(x0+c*step,y0+5*step,x0+c*step,y0+9*step);}
+  trainingBoard(state);
+  const selection = $('coordinate-selection');
+  if (!state.selected) {
+    selection.textContent = '点一枚棋子，查看它的位置。坐标始终以红方为基准。';
+    return;
   }
-  for (const r of [0,7]) { line(x0+3*step,y0+r*step,x0+5*step,y0+(r+2)*step);line(x0+5*step,y0+r*step,x0+3*step,y0+(r+2)*step); }
-  for (const [label, x] of [['楚 河', x0+2*step],['汉 界',x0+6*step]]) { const node = svg('text',{x,y:y0+4.5*step+1,'text-anchor':'middle','dominant-baseline':'central',fill:'#b39b75','font-size':21,'font-family':'SimSun,serif','letter-spacing':7});node.textContent=label;root.append(node); }
-  for(let c=0;c<9;c++) {const node=svg('text',{x:x0+c*step,y:575,'text-anchor':'middle',class:'coord-label'});node.textContent='abcdefghi'[state.flipped?8-c:c];root.append(node);}
-  for(let r=0;r<10;r++) {const node=svg('text',{x:25,y:y0+r*step+4,'text-anchor':'middle',class:'coord-label'});node.textContent=state.flipped?r:9-r;root.append(node);}
-  const legalTargets = state.selected ? state.legal.filter(move => move.from[0]===state.selected[0] && move.from[1]===state.selected[1]).map(move=>move.to.join(',')) : [];
-  const selectedSquare = state.selected ? `${'abcdefghi'[state.selected[1]]}${9-state.selected[0]}` : null;
-  $('coordinate-selection').textContent = selectedSquare ? `${pieceName(state.board[state.selected[0]][state.selected[1]])}在 ${selectedSquare}（x=${squareCoordinates(selectedSquare).x}，y=${squareCoordinates(selectedSquare).y}）。圆点是这枚棋子的合法落点。` : '点一枚棋子，查看它的位置。坐标始终以红方为基准。';
-  const last = state.lastMove ? uciToMove(state.lastMove) : null;
-  const hint = state.hintMove ? uciToMove(state.hintMove) : null;
-  for (let row=0;row<10;row++) for(let col=0;col<9;col++) {
-    const [x,y] = coords(row,col), piece=state.board[row][col], square=`${'abcdefghi'[col]}${9-row}`;
-    const cell=svg('g',{class:'board-cell','role':'button','aria-label':piece==='.'?`空位 ${square}`:`${pieceSide(piece)==='w'?'红':'黑'}${pieceName(piece)} ${square}`,tabindex:row===9&&col===4?'0':'-1','data-square':square});
-    cell.append(svg('rect',{x:x-25,y:y-25,width:50,height:50,fill:'transparent'}));
-    if(last && [...last.from].join(',')===[row,col].join(',') || last && [...last.to].join(',')===[row,col].join(',')) cell.append(svg('circle',{cx:x,cy:y,r:24,class:'last-ring','pointer-events':'none'}));
-    if(hint && (hint.from.join(',')===[row,col].join(',')||hint.to.join(',')===[row,col].join(','))) cell.append(svg('circle',{cx:x,cy:y,r:24,class:'target-mark','pointer-events':'none'}));
-    if(piece!=='.') {
-      cell.append(svg('circle',{cx:x,cy:y+2,r:22,fill:'#9c7c4f26','pointer-events':'none'}));
-      cell.append(svg('circle',{cx:x,cy:y,r:21.5,fill:'url(#stone)',stroke:'#c2ab82','stroke-width':1,'pointer-events':'none'}));
-      cell.append(svg('circle',{cx:x,cy:y,r:17.5,fill:'none',stroke:pieceSide(piece)==='w'?'#bb6e5955':'#7e786255','stroke-width':.9,'pointer-events':'none'}));
-      const text=svg('text',{x,y:y+.5,class:'piece-text',fill:pieceSide(piece)==='w'?'#b44e3c':'#405047'});text.textContent=pieceName(piece);cell.append(text);
-    }
-    if(state.selected?.[0]===row&&state.selected?.[1]===col) cell.append(svg('circle',{cx:x,cy:y,r:25,class:'selected-ring','pointer-events':'none'}));
-    if(legalTargets.includes(`${row},${col}`)) cell.append(svg('circle',{cx:x,cy:y,r:piece==='.'?5:24,class:piece==='.'?'legal-dot':'selected-ring','pointer-events':'none'}));
-    cell.addEventListener('click',()=>clickSquare(row,col));
-    cell.addEventListener('keydown',event=>{
-      if(event.key==='Enter'||event.key===' '){event.preventDefault();clickSquare(row,col);}
-      const deltas={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
-      if(deltas[event.key]) {event.preventDefault();const [dr,dc]=deltas[event.key].map(value=>state.flipped?-value:value);const nr=Math.max(0,Math.min(9,row+dr)),nc=Math.max(0,Math.min(8,col+dc));const next=root.querySelector(`[data-square="${'abcdefghi'[nc]}${9-nr}"]`);cell.setAttribute('tabindex','-1');next.setAttribute('tabindex','0');next.focus();}
-    });
-    root.append(cell);
-  }
-  if (focusedSquare) {
-    const focused = root.querySelector(`[data-square="${focusedSquare}"]`);
-    const oldTabStop = root.querySelector('[tabindex="0"]');
-    if (oldTabStop) oldTabStop.setAttribute('tabindex', '-1');
-    if (focused) { focused.setAttribute('tabindex', '0'); focused.focus({ preventScroll: true }); }
-  }
+  const [row, col] = state.selected, y = COORDINATE_SYSTEM.height - 1 - row;
+  const square = `${COORDINATE_SYSTEM.files[col]}${y}`;
+  selection.textContent = `${pieceName(state.board[row][col])}在 ${square}（x=${col}，y=${y}）。绿色标记表示合法落点。`;
+}
+function cancelSelection() {
+  if (!state.selected || state.pending || state.solved) return;
+  state.selected = null;
+  renderBoard();
 }
 function setPending(value) {
   state.pending=value;
+  $('chessboard').setAttribute('aria-disabled', String(value || state.solved));
   for(const id of ['lesson-button','hint-button','engine-button']) $(id).disabled=value || (id==='hint-button'&&(state.hints>=3||(state.solved&&state.current?.maxRedMoves))) || (id==='engine-button'&&!state.health.engine);
   refreshModelControls();
 }
@@ -303,6 +284,7 @@ async function clickSquare(row,col) {
   if(!state.selected) {feedback('先选择一枚红方棋子。');return;}
   const move=moveToUci({from:state.selected,to:[row,col]}), id=state.current.id, gen=state.generation;
   setPending(true);
+  feedback('正在核验这一步…');
   try {
     const report=await api('/api/attempt',{id,move,history:state.history}); if(gen!==state.generation)return;
     practiceLog.push({ puzzleId: id, move, history: [...state.history], assisted: state.assisted, hintsUsed: state.hints });
@@ -315,7 +297,8 @@ async function clickSquare(row,col) {
       state.legal=state.solved?[]:generateLegalMoves(state.board,'w');
       feedback(`${report.message}${state.solved?(state.assisted?' 本次为提示后完成。':' 本次为独立完成。'):''}`,'success');
       $('board-caption').textContent=report.opponentMove?`红：${report.notation} · 黑：${report.opponentNotation}`:`已走：${report.notation}（${move}）`;
-      $('turn-badge').textContent=state.solved?'✓ 目标完成':`● 红方第 ${state.history.length+1} 步`;
+      $('turn-badge').textContent=state.solved?'目标完成':`红方第 ${state.history.length+1} 步`;
+      $('turn-badge').classList.toggle('complete', state.solved);
       if(!state.solved){state.hints=0;$('hint-list').replaceChildren();$('hint-counter').textContent='0 / 3';$('report-panel').hidden=true;trainingWalkthroughView?.dispose();trainingWalkthroughView=null;$('report-content').replaceChildren();$('evidence-list').replaceChildren();resetTrainingAiCaption();}
       renderBoard();renderVariation(report.line);renderPuzzleLibrary();if(state.solved)showReport({...report,source:'lesson'});
     }
@@ -354,9 +337,25 @@ function showReport(report) {
     content.append(original);
   }
 }
-function nextPuzzle(){const puzzles=visiblePuzzles(),index=puzzles.findIndex(item=>item.id===state.current.id);selectPuzzle(puzzles[(index+1)%puzzles.length].id);view('training');}
+function nextPuzzle(){const puzzles=visiblePuzzles(),index=puzzles.findIndex(item=>item.id===state.current.id);selectPuzzle(puzzles[(index+1)%puzzles.length].id);}
 async function hint(){if(state.hints>=3||state.pending)return;const gen=state.generation,id=state.current.id;setPending(true);try{const result=await api('/api/hint',{id,level:state.hints+1,history:state.history});if(gen!==state.generation)return;state.hints=result.level;const item=el('li');item.append(el('small',`提示 ${result.level}`),document.createTextNode(result.text));$('hint-list').append(item);$('hint-counter').textContent=`${state.hints} / 3`;state.assisted=true;state.hintMove=result.move;renderBoard();}catch(error){toast(error.message);}finally{if(gen===state.generation)setPending(false);}}
-async function lesson(){const gen=state.generation;setPending(true);try{const result=await api('/api/lesson',{id:state.current.id,move:state.solved?state.lastMove:null,history:state.history});if(gen!==state.generation)return;showReport(result);state.assisted=true;state.hintMove=state.solved?null:result.move;renderBoard();}catch(error){toast(error.message);}finally{if(gen===state.generation)setPending(false);}}
+async function lesson() {
+  const gen = state.generation;
+  setPending(true);
+  try {
+    const result = await api('/api/lesson', { id: state.current.id, move: state.solved ? state.lastMove : null, history: state.history });
+    if (gen !== state.generation) return;
+    showReport(result);
+    state.assisted = true;
+    state.hintMove = state.solved ? null : result.move;
+    renderBoard();
+    if (!$('view-training').hidden && !document.querySelector('dialog[open]')) $('report-title').focus();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (gen === state.generation) setPending(false);
+  }
+}
 async function aiCoach() {
   if (state.modelBusy) return;
   if (!canUseModel()) { openApiDialog(); return; }
@@ -421,18 +420,25 @@ async function init(){try{
   const [health,puzzles,knowledge]=await Promise.all([api('/api/health'),api('/api/puzzles'),api('/api/knowledge')]);state.health=health;state.modelSession=createModelSession();state.puzzles=puzzles.puzzles;state.knowledge=knowledge.knowledge;await loadRecords();
   initLearnerPanel();
   $('model-select').value='deepseek-flash';
-  $('engine-status').textContent=health.engine?'● Pikafish 已就绪':'○ 引擎未配置';$('engine-status').className=health.engine?'ready':'offline';
+  $('engine-status').textContent=health.engine?'Pikafish 已就绪':'引擎未配置';$('engine-status').className=health.engine?'ready':'offline';
   $('ai-caption').textContent='AI 讲解需在右上角 API 设置中输入密钥；本地提示、解法回放与训练无需 Key。';
   syncApiSummary();setModelStatus('idle','默认模型 deepseek-flash · 请在 API 设置中输入密钥。');
   $('settings-status').textContent=`${health.engine?'引擎文件已就绪':'引擎文件未就绪'} · 模型密钥需在本页输入${health.needsToken?' · 接口需要访问口令':''}`;
   for(const puzzle of state.puzzles){const option=el('option',`${puzzle.course==='endgame'?'残局':'基础'} · ${puzzle.title}`);option.value=puzzle.id;$('eval-select').append(option);}
   for(const node of document.querySelectorAll('[data-course]'))node.onclick=()=>{state.course=node.dataset.course;state.theme='all';renderCurriculum();if(!visiblePuzzles().some(p=>p.id===state.current.id))selectPuzzle(visiblePuzzles()[0].id);refreshModelControls();};
   $('theme-filter').onchange=event=>{state.theme=event.target.value;renderCurriculum();if(!visiblePuzzles().some(p=>p.id===state.current.id))selectPuzzle(visiblePuzzles()[0].id);refreshModelControls();};
+  trainingBoard = mountTrainingBoard($('chessboard'), { onSquare: clickSquare, onCancel: cancelSelection });
   selectPuzzle(state.puzzles[0].id);renderKnowledge();
   importLab=mountImportLab({api,canUseModel,modelSettings:()=>state.modelSession.requestSettings(),modelBusy:()=>state.modelBusy,setModelBusy,setModelStatus,openApiDialog,exampleFen:state.puzzles.find(p=>p.id==='ending-ladder-two').fen});
   for(const item of document.querySelectorAll('[data-view]'))item.onclick=()=>view(item.dataset.view);
   document.querySelector('.brand').onclick=event=>{event.preventDefault();view('training');};
-  $('puzzle-select').onchange=event=>selectPuzzle(event.target.value);$('next-top').onclick=nextPuzzle;$('next-button').onclick=nextPuzzle;$('reset-button').onclick=()=>selectPuzzle(state.current.id);$('flip-button').onclick=()=>{state.flipped=!state.flipped;renderBoard();};$('hint-button').onclick=hint;$('lesson-button').onclick=lesson;$('ai-button').onclick=aiCoach;$('engine-button').onclick=engine;$('compare-button').onclick=compare;
+  $('puzzle-select').onchange=event=>selectPuzzle(event.target.value);$('next-top').onclick=nextPuzzle;$('reset-button').onclick=()=>selectPuzzle(state.current.id);$('hint-button').onclick=hint;$('lesson-button').onclick=lesson;$('ai-button').onclick=aiCoach;$('engine-button').onclick=engine;$('compare-button').onclick=compare;
+  $('next-button').onclick = () => { nextPuzzle(); view('training'); };
+  $('flip-button').onclick = () => {
+    state.flipped = !state.flipped;
+    $('flip-button').setAttribute('aria-pressed', String(state.flipped));
+    renderBoard();
+  };
   $('export-board-state').onclick = () => download({ app: 'qili-study', coordinates: COORDINATE_SYSTEM, board: serializeBoard(state.positionFen) }, '棋理学伴-结构化棋盘.json');
   $('settings-button').onclick=()=>$('settings-dialog').showModal();$('save-token').onclick=()=>{state.token=$('access-token').value;$('access-token').value='';toast('访问口令已应用，仅保存在当前页面内存。');};
   $('api-settings-button').onclick=openApiDialog;
@@ -449,12 +455,10 @@ async function init(){try{
   };
   for(const id of ['api-key-input','model-select'])$(id).addEventListener('input',()=>{$('api-test-status').dataset.state='idle';$('api-test-status').textContent='设置已修改，尚未应用或测试。';});
   $('api-dialog').addEventListener('close',()=>{$('api-key-input').value='';});
-  // A mobile-accessible entry point: clicking either connection badge opens settings.
-  $('engine-status').role='button';$('engine-status').tabIndex=0;$('model-status').role='button';$('model-status').tabIndex=0;
-  for(const id of ['engine-status','model-status']){const open=id==='model-status'?openApiDialog:()=>$('settings-dialog').showModal();$(id).onclick=open;$(id).onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open();}};}
+  $('engine-status').onclick = $('settings-button').onclick;
   $('export-button').onclick=async()=>{try{await refreshRecords();download({app:'qili-study',version:1,exportedAt:new Date().toISOString(),records:state.records},'棋理学伴-学习记录.json');}catch{toast('记录读取失败，请刷新页面后重试导出。');}};
   $('export-eval-button').onclick=()=>{if(state.comparison)download(state.comparison,'棋理学伴-实际对照结果.json');};
   $('import-file').onchange=async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>100000)throw new Error('记录文件不能超过 100 KB。');const data=JSON.parse(await file.text());if(data.app!=='qili-study'||data.version!==1)throw new Error('这不是受支持的棋理学伴记录。');const imported=sanitizeRecords(data.records);if(!confirm('将导入记录合并到本机；同一题以导入记录为准。是否继续？'))return;if(learningStore){await learningStore.importRecords(imported);await refreshRecords();signalRecordsChanged();$('data-status').textContent='记录已导入并保存。';}else{state.records={...state.records,...imported};updateStats();$('data-status').textContent='记录已导入当前页面，持久保存不可用，请保留导出备份。';}}catch(error){$('data-status').textContent=error.message;}finally{event.target.value='';}};
-  const initial=location.hash.slice(1);view(['training','import','mistakes','knowledge','evaluation'].includes(initial)?initial:'training');
+  const initial=location.hash.slice(1);view(['training','import','mistakes','knowledge','evaluation'].includes(initial)?initial:'training', false);
 }catch(error){feedback(`初始化失败：${error.message}`,'error');toast('加载失败，请确认本地服务正在运行并刷新页面。');}}
 init();
